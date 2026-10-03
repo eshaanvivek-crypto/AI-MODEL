@@ -12,9 +12,11 @@ from app.services.fetch import PageFetcher
 from app.services.llm import HeuristicLLMProvider, LLMProvider, LLMSetupState, OpenAILLMProvider
 from app.services.search import (
     DuckDuckGoSearchProvider,
+    FallbackSearchProvider,
     MockSearchProvider,
     SearchProvider,
     SerpAPISearchProvider,
+    WikipediaSearchProvider,
     domain_of,
 )
 
@@ -58,7 +60,12 @@ def _build_llm(settings: Settings) -> LLMSetupState:
 def _build_search_provider(settings: Settings) -> SearchProvider:
     provider = settings.search_provider.lower()
     if provider == "duckduckgo":
-        return DuckDuckGoSearchProvider(timeout=settings.http_timeout_seconds, user_agent=settings.user_agent)
+        return FallbackSearchProvider(
+            primary_name="duckduckgo",
+            primary=DuckDuckGoSearchProvider(timeout=settings.http_timeout_seconds, user_agent=settings.user_agent),
+            fallback_name="wikipedia",
+            fallback=WikipediaSearchProvider(timeout=settings.http_timeout_seconds, user_agent=settings.user_agent),
+        )
     if provider == "serpapi":
         if not settings.serpapi_api_key:
             raise SetupError("SEARCH_PROVIDER is serpapi but SERPAPI_API_KEY is missing.")
@@ -96,14 +103,33 @@ def run_research(request: ResearchRequest, services: AssistantServices) -> Resea
     stages.append(StageStatus(stage="query_planning", status="ok", detail=f"Generated {len(queries)} queries"))
 
     raw_hits = []
+    search_failures = 0
     for query in queries:
         try:
             hits = services.search_provider.search(query, limit=services.settings.max_search_results)
             raw_hits.extend(hits)
+            pop_warnings = getattr(services.search_provider, "pop_warnings", None)
+            if callable(pop_warnings):
+                warnings.extend(pop_warnings())
         except Exception as exc:
+            search_failures += 1
             warnings.append(f"Search failure for query '{query}': {exc}")
 
-    stages.append(StageStatus(stage="search", status="ok", detail=f"Collected {len(raw_hits)} raw results"))
+    if raw_hits:
+        search_status = "ok"
+        search_detail = f"Collected {len(raw_hits)} raw results"
+    elif search_failures:
+        search_status = "failed"
+        search_detail = (
+            f"Collected 0 raw results; {search_failures} query failures from available search providers"
+        )
+        warnings.append("No results were found because all search attempts failed.")
+    else:
+        search_status = "empty"
+        search_detail = "Collected 0 raw results from available search providers"
+        warnings.append("No results were found from the configured search providers.")
+
+    stages.append(StageStatus(stage="search", status=search_status, detail=search_detail))
 
     sources: list[SourceMetadata] = []
     evidence_lines: list[str] = []

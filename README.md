@@ -31,6 +31,7 @@ cp .env.example .env
 
 - `OPENAI_API_KEY` for `LLM_PROVIDER=openai`
 - `SERPAPI_API_KEY` for `SEARCH_PROVIDER=serpapi`
+- `SEARCH_PROVIDER=duckduckgo` uses a free keyless fallback to Wikipedia search when DuckDuckGo fails or returns zero parsable results.
 
 If keys are missing, app returns a setup warning and uses limited behavior where possible.
 
