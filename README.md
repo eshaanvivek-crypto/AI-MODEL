@@ -1,4 +1,4 @@
-# AI-MODEL Research Assistant MVP
+# AI-MODEL Research Assistant
 
 Runnable FastAPI MVP that accepts a research question, plans web searches, retrieves sources, extracts evidence, drafts a cited report, and validates citations.
 
@@ -16,10 +16,10 @@ Runnable FastAPI MVP that accepts a research question, plans web searches, retri
 - Configurable providers via environment variables
 - Guardrails for URL safety, timeouts, result limits, and prompt-injection resistance
 - Backend API (`/health`, `/api/research`) with schemas
-- Simple web UI at `/`
+- Responsive web workspace at `/`
 - Tests with mocks (no live API keys or internet required)
 
-## Setup
+## Local setup
 
 1. Copy env file:
 
@@ -42,13 +42,19 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-4. Run app:
+4. Run the website and API:
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-Open http://localhost:8000
+5. Open the website:
+
+```
+http://localhost:8000
+```
+
+The root page (`/`) provides a research workspace with guided question input, example prompts, stage status, source cards, warnings, setup messaging, and citation-linked report rendering.
 
 ## API
 
@@ -84,6 +90,14 @@ pytest
 ```bash
 docker compose up --build
 ```
+
+Open:
+
+```
+http://localhost:8000
+```
+
+The Docker image serves the same FastAPI API and static website assets (`/static/site.css`, `/static/site.js`) used in local development.
 
 ## Security and guardrails
 
