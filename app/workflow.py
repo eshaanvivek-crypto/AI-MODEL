@@ -12,9 +12,11 @@ from app.services.fetch import PageFetcher
 from app.services.llm import HeuristicLLMProvider, LLMProvider, LLMSetupState, OpenAILLMProvider
 from app.services.search import (
     DuckDuckGoSearchProvider,
+    FallbackSearchProvider,
     MockSearchProvider,
     SearchProvider,
     SerpAPISearchProvider,
+    WikipediaSearchProvider,
     domain_of,
 )
 
@@ -58,7 +60,9 @@ def _build_llm(settings: Settings) -> LLMSetupState:
 def _build_search_provider(settings: Settings) -> SearchProvider:
     provider = settings.search_provider.lower()
     if provider == "duckduckgo":
-        return DuckDuckGoSearchProvider(timeout=settings.http_timeout_seconds, user_agent=settings.user_agent)
+        primary = DuckDuckGoSearchProvider(timeout=settings.http_timeout_seconds, user_agent=settings.user_agent)
+        fallback = WikipediaSearchProvider(timeout=settings.http_timeout_seconds, user_agent=settings.user_agent)
+        return FallbackSearchProvider(primary=primary, fallback=fallback)
     if provider == "serpapi":
         if not settings.serpapi_api_key:
             raise SetupError("SEARCH_PROVIDER is serpapi but SERPAPI_API_KEY is missing.")
@@ -96,14 +100,24 @@ def run_research(request: ResearchRequest, services: AssistantServices) -> Resea
     stages.append(StageStatus(stage="query_planning", status="ok", detail=f"Generated {len(queries)} queries"))
 
     raw_hits = []
+    search_status = "warning"
     for query in queries:
         try:
             hits = services.search_provider.search(query, limit=services.settings.max_search_results)
-            raw_hits.extend(hits)
+            if hits:
+                raw_hits.extend(hits)
+            else:
+                warnings.append(f"No search results returned for query '{query}'.")
         except Exception as exc:
             warnings.append(f"Search failure for query '{query}': {exc}")
 
-    stages.append(StageStatus(stage="search", status="ok", detail=f"Collected {len(raw_hits)} raw results"))
+    if raw_hits:
+        search_status = "ok"
+        stages.append(StageStatus(stage="search", status=search_status, detail=f"Collected {len(raw_hits)} raw results"))
+    elif warnings:
+        stages.append(StageStatus(stage="search", status="warning", detail="No results found from available providers."))
+    else:
+        stages.append(StageStatus(stage="search", status="warning", detail="No results were returned from the configured search providers."))
 
     sources: list[SourceMetadata] = []
     evidence_lines: list[str] = []
@@ -132,7 +146,7 @@ def run_research(request: ResearchRequest, services: AssistantServices) -> Resea
         except Exception as exc:
             warnings.append(f"Retrieval failed for {hit.url}: {exc}")
 
-    stages.append(StageStatus(stage="source_retrieval", status="ok", detail=f"Retrieved {len(sources)} sources"))
+    stages.append(StageStatus(stage="source_retrieval", status="ok" if sources else "warning", detail=f"Retrieved {len(sources)} sources"))
 
     sources = _dedupe_sources(sources)
     for idx, src in enumerate(sources, start=1):
@@ -142,8 +156,8 @@ def run_research(request: ResearchRequest, services: AssistantServices) -> Resea
     for idx, src in enumerate(sources, start=1):
         remapped_lines.append(f"{src.title}: {src.snippet} [{idx}]")
 
-    stages.append(StageStatus(stage="text_extraction", status="ok", detail=f"Extracted evidence from {len(sources)} sources"))
-    stages.append(StageStatus(stage="evidence_claim_extraction", status="ok", detail=f"Extracted {len(remapped_lines)} evidence lines"))
+    stages.append(StageStatus(stage="text_extraction", status="ok" if sources else "warning", detail=f"Extracted evidence from {len(sources)} sources"))
+    stages.append(StageStatus(stage="evidence_claim_extraction", status="ok" if remapped_lines else "warning", detail=f"Extracted {len(remapped_lines)} evidence lines"))
 
     if not sources:
         uncertainty = "No reliable sources were retrieved. Response quality is limited."
@@ -176,3 +190,4 @@ class ResearchAssistant:
 
     def research(self, request: ResearchRequest) -> ResearchResponse:
         return run_research(request, self.services)
+
