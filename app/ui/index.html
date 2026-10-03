@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI-MODEL Research Assistant</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; max-width: 900px; }
+      textarea { width: 100%; min-height: 120px; }
+      button { margin-top: 0.75rem; padding: 0.5rem 1rem; }
+      pre { background: #f6f8fa; padding: 1rem; white-space: pre-wrap; }
+      .warn { color: #a15c00; }
+      .err { color: #b42318; }
+    </style>
+  </head>
+  <body>
+    <h1>AI-MODEL Research Assistant</h1>
+    <p>Submit a research question to run staged web research and generate a cited report.</p>
+
+    <label for="question">Research question</label>
+    <textarea id="question" placeholder="e.g. Compare current battery technologies for EVs"></textarea>
+    <br />
+    <button id="run">Research</button>
+
+    <h2>Report</h2>
+    <pre id="report">No report yet.</pre>
+
+    <h2>Sources</h2>
+    <ul id="sources"></ul>
+
+    <h2>Status</h2>
+    <ul id="stages"></ul>
+    <p class="warn" id="warnings"></p>
+    <p class="err" id="setup"></p>
+
+    <script>
+      async function runResearch() {
+        const question = document.getElementById('question').value.trim();
+        if (!question) return;
+
+        document.getElementById('report').textContent = 'Running...';
+        document.getElementById('sources').innerHTML = '';
+        document.getElementById('stages').innerHTML = '';
+        document.getElementById('warnings').textContent = '';
+        document.getElementById('setup').textContent = '';
+
+        const response = await fetch('/api/research', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })
+        });
+        const data = await response.json();
+
+        document.getElementById('report').textContent = data.report || 'No report generated.';
+
+        const sources = document.getElementById('sources');
+        (data.sources || []).forEach((s) => {
+          const li = document.createElement('li');
+          li.innerHTML = `[${s.id}] <a href="${s.url}" target="_blank" rel="noopener noreferrer">${s.title}</a> (${s.publisher}) — retrieved ${new Date(s.retrieved_at).toLocaleString()}`;
+          sources.appendChild(li);
+        });
+
+        const stages = document.getElementById('stages');
+        (data.stages || []).forEach((st) => {
+          const li = document.createElement('li');
+          li.textContent = `${st.stage}: ${st.status}${st.detail ? ' - ' + st.detail : ''}`;
+          stages.appendChild(li);
+        });
+
+        if (data.warnings?.length) {
+          document.getElementById('warnings').textContent = data.warnings.join(' | ');
+        }
+        if (data.setup_error) {
+          document.getElementById('setup').textContent = data.setup_error;
+        }
+      }
+
+      document.getElementById('run').addEventListener('click', runResearch);
+    </script>
+  </body>
+</html>
