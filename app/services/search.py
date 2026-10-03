@@ -189,7 +189,7 @@ def _normalize_duckduckgo_href(href: str) -> str:
 
     parsed = urlparse(candidate)
     host = (parsed.hostname or "").lower()
-    if host.endswith("duckduckgo.com") and parsed.path.startswith("/l"):
+    if host in {"duckduckgo.com", "www.duckduckgo.com"} and parsed.path.startswith("/l"):
         redirect_target = parse_qs(parsed.query).get("uddg", [""])[0]
         if redirect_target:
             return unquote(redirect_target)
